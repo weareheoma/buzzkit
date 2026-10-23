@@ -1,0 +1,3 @@
+# STORIES TO HIDE FROM THE FEEDS. One per line: paste the story link, or a few words from its headline.
+# Lines starting with # are ignored. Example:
+# https://www.bbc.com/news/articles/example

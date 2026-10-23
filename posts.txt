@@ -1,0 +1,17 @@
+# YOUR OWN STORIES. Each story is a block. Blocks are separated by a line with only ---
+# First lines: lang (sw or en), title, source, date (YYYY-MM-DD HH:MM, Dar es Salaam time), link (optional).
+# Optional lines: category (World, Africa, Local or your own), image (https link to a picture you may use), pinned: yes (makes it the top story).
+# Then one empty line, then the story text. Delete a block to remove that story.
+lang: sw
+title: Karibu Buzzkit
+source: Buzzkit
+date: 2026-10-24 08:00
+
+Karibu kwenye Buzzkit. Hapa utapata habari za dunia na za nyumbani kwa Kiswahili na Kiingereza, zinazosasishwa kila baada ya saa chache.
+---
+lang: en
+title: Welcome to Buzzkit
+source: Buzzkit
+date: 2026-10-24 08:05
+
+World and home news in English and Kiswahili, refreshed every few hours from BBC, Reuters, Al Jazeera and DW.
