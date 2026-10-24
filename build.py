@@ -150,16 +150,55 @@ def is_hidden(story, hide):
 SW_DAYS = ["Jumatatu", "Jumanne", "Jumatano", "Alhamisi", "Ijumaa", "Jumamosi", "Jumapili"]
 SW_MONTHS = ["Januari", "Februari", "Machi", "Aprili", "Mei", "Juni", "Julai", "Agosti",
              "Septemba", "Oktoba", "Novemba", "Desemba"]
+SW_MONTHS_SHORT = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ago", "Sep", "Okt", "Nov", "Des"]
+EN_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+EN_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+             "September", "October", "November", "December"]
+EN_MONTHS_SHORT = [m[:3] for m in EN_MONTHS]
 CAT_SW = {"World": "Dunia", "Africa": "Afrika", "Local": "Hapa Kwetu"}
+CAT_ORDER = ["World", "Africa", "Local"]
 e = html.escape
+
+# Everything a reader sees, once per language. Edit the wording here.
+TXT = {
+    "en": {
+        "other": "sw", "other_name": "Kiswahili", "all": "All", "search": "Search",
+        "cats": "Categories", "hero": "Morning read", "recent": "Recent stories",
+        "desk": "From the desk", "more": "More headlines", "none": "No stories match.",
+        "results": "{n} stories", "join_h": "Buzzkit on WhatsApp",
+        "join_p": "News from the world and home, straight to your phone. Free.", "join_btn": "Join",
+        "about": "World and home news in English.",
+        "legal": "Headlines and short snippets link to the publisher.<br>Own posts are written by Buzzkit.",
+        "pitch": "Pitch a story", "updated": "Updated", "empty": "No stories yet.",
+    },
+    "sw": {
+        "other": "en", "other_name": "English", "all": "Zote", "search": "Tafuta",
+        "cats": "Makundi", "hero": "Soma ya asubuhi", "recent": "Habari za hivi karibuni",
+        "desk": "Kutoka kwetu", "more": "Habari zaidi", "none": "Hakuna habari zilizopatikana.",
+        "results": "Habari {n}", "join_h": "Buzzkit kwenye WhatsApp",
+        "join_p": "Habari za dunia na nyumbani, moja kwa moja kwenye simu yako. Bure.", "join_btn": "Jiunge",
+        "about": "Habari za dunia na nyumbani kwa Kiswahili.",
+        "legal": "Vichwa vya habari na vifupisho vinaelekeza kwa mchapishaji.<br>Makala zetu zimeandikwa na Buzzkit.",
+        "pitch": "Tuma habari", "updated": "Imesasishwa", "empty": "Bado hakuna habari.",
+    },
+}
+
+
+def month_short(dt, lang):
+    return (SW_MONTHS_SHORT if lang == "sw" else EN_MONTHS_SHORT)[dt.month - 1]
 
 
 def stamp(s):
-    return s["when"].astimezone(EAT).strftime("%d %b, %H:%M")
+    t = s["when"].astimezone(EAT)
+    return f"{t.day:02d} {month_short(t, s['lang'])}, {t:%H:%M}"
+
+
+def cat_label(cat, lang):
+    return CAT_SW.get(cat, cat) if lang == "sw" else cat
 
 
 def tags(s):
-    return f'<span class="tags">{e(s["cat"])} <i>•</i> {e(s["source"])} <i>•</i> {"SW" if s["lang"] == "sw" else "EN"}</span>'
+    return f'<span class="tags">{e(cat_label(s["cat"], s["lang"]))} <i>•</i> {e(s["source"])}</span>'
 
 
 def head(s, level="h3"):
@@ -173,10 +212,10 @@ def attrs(s):
     return f'data-lang="{s["lang"]}" data-cat="{e(s["cat"], quote=True)}"'
 
 
-def hero(s):
+def hero(s, lang):
     img = f'<img src="{e(s["image"], quote=True)}" alt="" loading="lazy">' if s["image"] else ""
     deck = f'<p class="deck">{e(s["summary"])}</p>' if s["summary"] else ""
-    return (f'<section class="hero"><div class="label">Soma ya asubuhi · Morning read</div>'
+    return (f'<section class="hero"><div class="label">{e(TXT[lang]["hero"])}</div>'
             f'{head(s, "h2")}{deck}<div class="when">{tags(s)} <span>{stamp(s)} EAT</span></div>{img}</section>')
 
 
@@ -194,10 +233,16 @@ def mini(s):
     return f'<li {attrs(s)}>{head(s, "h4")}<span class="when">{e(s["source"])} · {stamp(s)}</span></li>'
 
 
-def date_line():
+def date_line(lang):
     n = datetime.now(EAT)
-    return (f'{SW_DAYS[n.weekday()]}, {n.day} {SW_MONTHS[n.month - 1]} {n.year} · '
-            f'{n.strftime("%A, %B")} {n.day}, {n.year}')
+    if lang == "sw":
+        return f"{SW_DAYS[n.weekday()]}, {n.day} {SW_MONTHS[n.month - 1]} {n.year}"
+    return f"{EN_DAYS[n.weekday()]}, {EN_MONTHS[n.month - 1]} {n.day}, {n.year}"
+
+
+def fill(template, vals):
+    """Replace __NAME__ markers in one pass, so story text can never be mistaken for a marker."""
+    return re.sub(r"__([A-Z_]+?)__", lambda m: vals.get(m.group(1), m.group(0)), template)
 
 
 TEMPLATE = """<!doctype html>
@@ -208,26 +253,41 @@ TEMPLATE = """<!doctype html>
 <title>Buzzkit</title>
 <meta name="description" content="We cover the news of the world and home. Habari za dunia na nyumbani.">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500&family=Public+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<noscript><style>.chooser{display:none!important}.site{display:block!important}</style></noscript>
 <style>
 :root{--bg:#fff;--ink:#101820;--muted:#5B6773;--line:#E1E6EB;--bar:#0E1B2B;--bar-ink:#fff;--accent:#1F4FD8;--soft:#F3F6F9;--sw:#0B6B5E;color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--bg:#0B1118;--ink:#E8EEF4;--muted:#9AA9B7;--line:#222E3A;--bar:#050A10;--bar-ink:#fff;--accent:#8FB0FF;--soft:#121B25;--sw:#59D6C2;color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 'Public Sans',system-ui,sans-serif}
 a{color:inherit}a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .in{max-width:1080px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-left)) 0 max(16px,env(safe-area-inset-right))}
+.site{display:none}
+body[data-view=en] .site[data-lang=en],body[data-view=sw] .site[data-lang=sw]{display:block}
+.chooser{display:none;min-height:100vh;min-height:100dvh;align-items:center;background:var(--bar);color:var(--bar-ink)}
+body[data-view=choose] .chooser{display:flex}
+.chooser .in{width:100%;padding-block:40px;display:flex;flex-direction:column;gap:18px}
+.chooser .brand{font-size:34px}
+.chooser h1{margin:0;font:800 clamp(28px,6vw,48px)/1.1 Archivo,sans-serif;letter-spacing:-.02em;text-wrap:balance}
+.chooser p{margin:0;color:#B7C3D0;max-width:52ch}
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px;max-width:640px;margin-top:6px}
+.choice{display:flex;flex-direction:column;gap:6px;padding:22px;border:2px solid #33465c;border-radius:8px;color:var(--bar-ink);text-decoration:none}
+.choice b{font:800 26px Archivo,sans-serif}
+.choice span{color:#B7C3D0;font-size:15px}
+.choice:hover,.choice:focus-visible{border-color:#fff;background:#13243a}
 .top{background:var(--bar);color:var(--bar-ink)}
 .top .in{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding-block:14px}
 .brand{font:800 26px/1 Archivo,'Arial Narrow',sans-serif;letter-spacing:-.02em;text-transform:uppercase;text-decoration:none}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
 .top input{min-height:40px;width:min(260px,100%);padding:0 12px;border:1px solid #33465c;border-radius:4px;background:transparent;color:var(--bar-ink);font:inherit}
 .top input::placeholder{color:#8FA0B3}
+.switch{display:inline-flex;align-items:center;min-height:40px;padding:0 16px;border:1px solid #5A708A;border-radius:999px;color:var(--bar-ink);font:700 13px Archivo,sans-serif;letter-spacing:.04em;text-decoration:none}
+.switch:hover{background:#1B2B40}
 .cats{border-bottom:1px solid var(--line);background:var(--bg);position:sticky;top:0;z-index:5}
 .cats .in{display:flex;gap:4px;overflow-x:auto;scrollbar-width:thin}
 .cat{flex:none;min-height:46px;padding:0 14px;border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:700 13px Archivo,sans-serif;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .cat[aria-pressed=true]{color:var(--ink);border-bottom-color:var(--accent)}
-.datebar{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;justify-content:space-between;padding-block:12px;color:var(--muted);font:500 12px 'IBM Plex Mono',monospace;letter-spacing:.03em;text-transform:uppercase}
-.lang{display:flex;gap:6px}
-.lang button{min-height:36px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink);font:600 12px 'Public Sans',sans-serif;cursor:pointer}
-.lang button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.datebar{padding-block:12px;color:var(--muted);font:500 12px 'IBM Plex Mono',monospace;letter-spacing:.03em;text-transform:uppercase}
 main{padding-bottom:40px}
 .tags{font:500 11px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
 .tags i{font-style:normal;color:var(--muted);padding:0 2px}
@@ -254,8 +314,6 @@ ul.list h3{margin:0;font:700 21px/1.25 Archivo,sans-serif;letter-spacing:-.01em;
 ul.minis{list-style:none;margin:0;padding:0}
 ul.minis li{display:flex;flex-direction:column;gap:2px;padding:12px 0;border-bottom:1px solid var(--line)}
 ul.minis h4{margin:0;font:600 16px/1.35 'Public Sans',sans-serif}
-#results{display:none}
-body.filtering #home{display:none}body.filtering #results{display:block}
 .none{padding:32px 0;color:var(--muted)}
 footer{background:var(--bar);color:#B7C3D0;margin-top:20px}
 footer .in{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 32px;padding-block:28px;font-size:13px}
@@ -264,66 +322,137 @@ footer a{color:#fff;text-decoration:underline}
 </style>
 </head>
 <body>
-<header class="top"><div class="in">
-<a class="brand" href="./">Buzzkit</a>
-<input id="q" type="search" placeholder="Search · Tafuta" aria-label="Search" autocomplete="off">
-</div></header>
-<nav class="cats" aria-label="Categories"><div class="in">__CATS__</div></nav>
-<div class="in">
-<div class="datebar"><span>__DATE__</span>
-<span class="lang" role="group" aria-label="Language"><button type="button" data-lang="all" aria-pressed="true">Zote · All</button><button type="button" data-lang="en" aria-pressed="false">English</button><button type="button" data-lang="sw" aria-pressed="false">Kiswahili</button></span></div>
-<main>
-<div id="home">
-__HERO__
-<div class="two">
-<section class="sec"><h5>Habari za hivi karibuni · Recent stories</h5><ul class="list">__RECENT__</ul></section>
-__JOIN__
+<section class="chooser" aria-labelledby="ct"><div class="in">
+<div class="brand">Buzzkit</div>
+<h1 id="ct">Choose your language<br>Chagua lugha</h1>
+<p>Read the news in the language you prefer. · Soma habari kwa lugha unayopenda.</p>
+<div class="choices">
+<a class="choice" href="#en" lang="en"><b>English</b><span>World and home news</span></a>
+<a class="choice" href="#sw" lang="sw"><b>Kiswahili</b><span>Habari za dunia na nyumbani</span></a>
 </div>
-__TILES__
-__MORESEC__
-</div>
-<div id="results"><section class="sec"><h5 id="rtitle">Results · Matokeo</h5><ul class="list" id="rlist"></ul><p class="none" id="rnone" hidden>No stories match · Hakuna habari.</p></section></div>
-</main>
-</div>
-<footer><div class="in">
-<div><b>Buzzkit</b>World and home news in Kiswahili and English.<br>© __YEAR__ Buzzkit | Dar es Salaam<br>Updated __UPDATED__ EAT</div>
-<div>Headlines and short snippets link to the publisher.<br>Own posts are written by Buzzkit.__CONTACT__</div>
-</div></footer>
+</div></section>
+__SITES__
 <script>
 var DATA=__DATA__;
 (function(){
-var cat='all',lang='all',q='';
-var $=function(i){return document.getElementById(i)};
-function build(){
-  var f=DATA.filter(function(s){
-    return (cat==='all'||s.c===cat)&&(lang==='all'||s.l===lang)&&(!q||(s.t+' '+s.x+' '+s.s).toLowerCase().indexOf(q)>=0)});
-  var ul=$('rlist');ul.replaceChildren();
-  f.forEach(function(s){
-    var li=document.createElement('li'),tg=document.createElement('span'),h=document.createElement('h3'),w=document.createElement('span');
-    tg.className='tags';tg.textContent=s.c+' • '+s.s+' • '+(s.l==='sw'?'SW':'EN');
-    if(s.u){var a=document.createElement('a');a.href=s.u;a.target='_blank';a.rel='noopener noreferrer';a.textContent=s.t;h.appendChild(a)}else h.textContent=s.t;
-    w.className='when';w.textContent=s.d+' EAT';
-    li.appendChild(tg);li.appendChild(h);
-    if(s.x){var p=document.createElement('p');p.className='deck';p.style.fontSize='16px';p.textContent=s.x;li.appendChild(p)}
-    li.appendChild(w);ul.appendChild(li);});
-  $('rnone').hidden=f.length>0;
-  $('rtitle').textContent=(f.length)+' stories · habari '+f.length;
+var KEY='buzzkit-lang';
+function saved(){try{return localStorage.getItem(KEY)}catch(x){return null}}
+function save(v){try{localStorage.setItem(KEY,v)}catch(x){}}
+function view(){
+  var h=location.hash.replace('#','');
+  if(h==='en'||h==='sw'){save(h);return h}
+  var s=saved();
+  return (s==='en'||s==='sw')?s:'choose';
 }
-function apply(){
-  var on=cat!=='all'||lang!=='all'||q!=='';
-  document.body.classList.toggle('filtering',on);
-  if(on)build();
+function show(){
+  var v=view();
+  document.body.setAttribute('data-view',v);
+  if(v!=='choose')document.documentElement.lang=v;
+  window.scrollTo(0,0);
 }
-[].forEach.call(document.querySelectorAll('.cat'),function(b){b.addEventListener('click',function(){
-  cat=b.dataset.cat;[].forEach.call(document.querySelectorAll('.cat'),function(x){x.setAttribute('aria-pressed',String(x===b))});apply()})});
-[].forEach.call(document.querySelectorAll('.lang button'),function(b){b.addEventListener('click',function(){
-  lang=b.dataset.lang;[].forEach.call(document.querySelectorAll('.lang button'),function(x){x.setAttribute('aria-pressed',String(x===b))});apply()})});
-$('q').addEventListener('input',function(ev){q=ev.target.value.trim().toLowerCase();apply()});
+window.addEventListener('hashchange',show);
+show();
+[].forEach.call(document.querySelectorAll('.site'),function(root){
+  var lg=root.getAttribute('data-lang'),cat='all',q='';
+  var home=root.querySelector('.home'),res=root.querySelector('.results'),list=root.querySelector('.rlist'),
+      none=root.querySelector('.rnone'),rt=root.querySelector('.rtitle'),input=root.querySelector('.q');
+  function build(){
+    var f=DATA.filter(function(s){
+      return s.l===lg&&(cat==='all'||s.c===cat)&&(!q||(s.t+' '+s.x+' '+s.s).toLowerCase().indexOf(q)>=0)});
+    list.replaceChildren();
+    f.forEach(function(s){
+      var li=document.createElement('li'),tg=document.createElement('span'),h=document.createElement('h3'),w=document.createElement('span');
+      tg.className='tags';tg.textContent=s.cl+' • '+s.s;
+      if(s.u){var a=document.createElement('a');a.href=s.u;a.target='_blank';a.rel='noopener noreferrer';a.textContent=s.t;h.appendChild(a)}else h.textContent=s.t;
+      w.className='when';w.textContent=s.d+' EAT';
+      li.appendChild(tg);li.appendChild(h);
+      if(s.x){var p=document.createElement('p');p.className='deck';p.style.fontSize='16px';p.textContent=s.x;li.appendChild(p)}
+      li.appendChild(w);list.appendChild(li);});
+    none.hidden=f.length>0;
+    rt.textContent=root.getAttribute('data-rt').replace('{n}',f.length);
+  }
+  function apply(){
+    var on=cat!=='all'||q!=='';
+    home.hidden=on;res.hidden=!on;
+    if(on)build();
+  }
+  [].forEach.call(root.querySelectorAll('.cat'),function(b){b.addEventListener('click',function(){
+    cat=b.getAttribute('data-cat');
+    [].forEach.call(root.querySelectorAll('.cat'),function(x){x.setAttribute('aria-pressed',String(x===b))});
+    apply()})});
+  input.addEventListener('input',function(ev){q=ev.target.value.trim().toLowerCase();apply()});
+});
 })();
 </script>
 </body>
 </html>
 """
+
+SITE = """<div class="site" data-lang="__LANG__" data-rt="__RT__">
+<header class="top"><div class="in">
+<a class="brand" href="./">Buzzkit</a>
+<span class="tools"><input class="q" type="search" placeholder="__SEARCH__" aria-label="__SEARCH__" autocomplete="off"><a class="switch" href="#__OTHER__" lang="__OTHER__">__OTHERNAME__</a></span>
+</div></header>
+<nav class="cats" aria-label="__CATSLABEL__"><div class="in">__CATS__</div></nav>
+<div class="in">
+<div class="datebar">__DATE__</div>
+<main>
+<div class="home">
+__HERO__
+<div class="two">
+<section class="sec"><h5>__RECENTH__</h5><ul class="list">__RECENT__</ul></section>
+__JOIN__
+</div>
+__TILES__
+__MORESEC__
+</div>
+<div class="results" hidden><section class="sec"><h5 class="rtitle"></h5><ul class="list rlist"></ul><p class="none rnone" hidden>__NONE__</p></section></div>
+</main>
+</div>
+<footer><div class="in">
+<div><b>Buzzkit</b>__ABOUT__<br>© __YEAR__ Buzzkit | Dar es Salaam<br>__UPDATEDLABEL__ __UPDATED__ EAT</div>
+<div>__LEGAL____CONTACT__</div>
+</div></footer>
+</div>"""
+
+
+def render_site(stories, lang, now):
+    """One complete page (menu, stories, footer) holding only stories written in `lang`."""
+    t = TXT[lang]
+    mine = [s for s in stories if s["lang"] == lang]
+    lead = next((s for s in mine if s["own"] and s["pinned"]), mine[0] if mine else None)
+    rest = [s for s in mine if s is not lead]
+    recent, rest = rest[:10], rest[10:]
+    desk = [s for s in rest if s["own"]][:3]
+    more = [s for s in rest if s not in desk][:40]
+
+    cats = sorted({s["cat"] for s in mine},
+                  key=lambda c: (CAT_ORDER.index(c) if c in CAT_ORDER else 9, c))
+    cat_btns = f'<button type="button" class="cat" data-cat="all" aria-pressed="true">{e(t["all"])}</button>' + "".join(
+        f'<button type="button" class="cat" data-cat="{e(c, quote=True)}" aria-pressed="false">{e(cat_label(c, lang))}</button>'
+        for c in cats)
+
+    join = ""
+    if CHANNEL_URL.startswith("https://"):
+        join = (f'<aside class="join"><h5>{e(t["join_h"])}</h5><p>{e(t["join_p"])}</p>'
+                f'<a class="btn" href="{e(CHANNEL_URL, quote=True)}" target="_blank" rel="noopener noreferrer">{e(t["join_btn"])}</a></aside>')
+    tiles = (f'<section class="sec"><h5>{e(t["desk"])}</h5><div class="tiles">'
+             + "".join(tile(s) for s in desk) + "</div></section>") if desk else ""
+    more_sec = (f'<section class="sec"><h5>{e(t["more"])}</h5><ul class="minis">'
+                + "".join(mini(s) for s in more) + "</ul></section>") if more else ""
+    contact = (f'<br>{e(t["pitch"])}: <a href="mailto:{e(CONTACT_EMAIL, quote=True)}">{e(CONTACT_EMAIL)}</a>'
+               if CONTACT_EMAIL else "")
+    return fill(SITE, {
+        "LANG": lang, "RT": e(t["results"], quote=True), "SEARCH": e(t["search"], quote=True),
+        "OTHER": t["other"], "OTHERNAME": e(t["other_name"]), "CATSLABEL": e(t["cats"], quote=True),
+        "CATS": cat_btns, "DATE": e(date_line(lang)),
+        "HERO": hero(lead, lang) if lead else f'<p class="none">{e(t["empty"])}</p>',
+        "RECENTH": e(t["recent"]), "RECENT": "".join(row(s) for s in recent),
+        "JOIN": join, "TILES": tiles, "MORESEC": more_sec, "NONE": e(t["none"]),
+        "ABOUT": e(t["about"]), "YEAR": str(now.year), "UPDATEDLABEL": e(t["updated"]),
+        "UPDATED": f"{now.day:02d} {month_short(now, lang)} {now:%H:%M}",
+        "LEGAL": t["legal"], "CONTACT": contact,
+    })
 
 
 def main(out="index.html"):
@@ -348,42 +477,17 @@ def main(out="index.html"):
     own = [s for s in read_posts() if not is_hidden(s, hide)]
     stories = sorted(stories + own, key=lambda s: s["when"], reverse=True)[:200]
 
-    lead = next((s for s in stories if s["own"] and s["pinned"]), stories[0] if stories else None)
-    rest = [s for s in stories if s is not lead]
-    recent, rest = rest[:10], rest[10:]
-    desk = [s for s in rest if s["own"]][:3]
-    more = [s for s in rest if s not in desk][:40]
-
-    cats = sorted({s["cat"] for s in stories}, key=lambda c: (["World", "Africa", "Local"].index(c) if c in ("World", "Africa", "Local") else 9, c))
-    cat_btns = '<button type="button" class="cat" data-cat="all" aria-pressed="true">Yote · All</button>' + "".join(
-        f'<button type="button" class="cat" data-cat="{e(c, quote=True)}" aria-pressed="false">'
-        f'{e(c)}{" · " + CAT_SW[c] if c in CAT_SW else ""}</button>' for c in cats)
-
-    join = ""
-    if CHANNEL_URL.startswith("https://"):
-        join = ('<aside class="join"><h5>Buzzkit kwenye WhatsApp</h5>'
-                '<p>Habari za dunia na nyumbani, moja kwa moja kwenye simu yako. Free.</p>'
-                f'<a class="btn" href="{e(CHANNEL_URL, quote=True)}" target="_blank" rel="noopener noreferrer">Jiunge · Join</a></aside>')
-    tiles = ('<section class="sec"><h5>Kutoka kwetu · From the desk</h5><div class="tiles">'
-             + "".join(tile(s) for s in desk) + "</div></section>") if desk else ""
-    contact = f'<br>Pitch a story: <a href="mailto:{e(CONTACT_EMAIL, quote=True)}">{e(CONTACT_EMAIL)}</a>' if CONTACT_EMAIL else ""
-    data = [{"t": s["title"], "x": s["summary"], "u": s["url"], "s": s["source"], "c": s["cat"],
-             "l": s["lang"], "d": stamp(s)} for s in stories]
-    data_js = json.dumps(data, ensure_ascii=False).replace("</", "<\\/").replace(" ", " ").replace(" ", " ")
     now = datetime.now(EAT)
-    page = (TEMPLATE
-            .replace("__CATS__", cat_btns).replace("__DATE__", e(date_line()))
-            .replace("__HERO__", hero(lead) if lead else '<p class="none">No stories yet · Bado hakuna habari.</p>')
-            .replace("__RECENT__", "".join(row(s) for s in recent))
-            .replace("__JOIN__", join).replace("__TILES__", tiles)
-            .replace("__MORESEC__", ('<section class="sec"><h5>Habari zaidi · More headlines</h5><ul class="minis">'
-                                    + "".join(mini(s) for s in more) + "</ul></section>") if more else "")
-            .replace("__CONTACT__", contact).replace("__YEAR__", str(now.year))
-            .replace("__UPDATED__", now.strftime("%d %b %H:%M"))
-            .replace("__DATA__", data_js))
+    sites = "\n".join(render_site(stories, lang, now) for lang in ("en", "sw"))
+    data = [{"t": s["title"], "x": s["summary"], "u": s["url"], "s": s["source"], "c": s["cat"],
+             "cl": cat_label(s["cat"], s["lang"]), "l": s["lang"], "d": stamp(s)} for s in stories]
+    data_js = (json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+               .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+    page = fill(TEMPLATE, {"SITES": sites, "DATA": data_js})
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(page)
-    print(f"Wrote {len(stories)} stories to {out}")
+    counts = {lang: sum(1 for s in stories if s["lang"] == lang) for lang in ("en", "sw")}
+    print(f"Wrote {len(stories)} stories to {out} (English {counts['en']}, Kiswahili {counts['sw']})")
 
 
 if __name__ == "__main__":
